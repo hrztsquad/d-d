@@ -247,13 +247,15 @@ class DoodstreamExtractor {
                     return;
                 }
 
-                // Check for video stream URLs
-                if (reqUrl.includes('.mp4') ||
+                // Check for video stream URLs (skip HTML document navigations)
+                if (resourceType !== 'document' && (
+                    reqUrl.includes('.mp4') ||
                     reqUrl.includes('.m3u8') ||
                     reqUrl.includes('/download') ||
                     reqUrl.includes('get_file') ||
+                    reqUrl.includes('get_video') ||
                     reqUrl.includes('cloudatacdn.com') ||
-                    reqUrl.includes('streaming')) {
+                    reqUrl.includes('streaming'))) {
                     capturedUrls.push(reqUrl);
                 }
 
@@ -264,10 +266,12 @@ class DoodstreamExtractor {
                 const resUrl = response.url();
                 const contentType = response.headers()['content-type'] || '';
 
-                if (contentType.includes('video') ||
-                    resUrl.includes('.mp4') ||
+                if (!contentType.includes('text/html') && (
+                    contentType.includes('video') ||
                     resUrl.includes('get_file') ||
-                    resUrl.includes('cloudatacdn.com')) {
+                    resUrl.includes('get_video') ||
+                    resUrl.includes('cloudatacdn.com') ||
+                    (resUrl.includes('.mp4') && !/streamtape\.com\/[ve]\//i.test(resUrl)))) {
                     capturedUrls.push(resUrl);
                 }
             });
@@ -382,21 +386,23 @@ class DoodstreamExtractor {
                 console.log('[Doodstream] Could not extract thumbnail');
             }
 
-            // StreamTape fast extraction (robotlink / ideoolink / mainvideo)
+            // StreamTape fast extraction (norobotlink / robotlink / ideoolink / mainvideo)
             if (/streamtape|strtape|stape/i.test(finalUrl)) {
                 console.log('[StreamTape] Waiting for StreamTape video link...');
                 await page.waitForFunction(() => {
+                    const nr = document.getElementById('norobotlink')?.textContent || '';
                     const r = document.getElementById('robotlink')?.textContent || '';
                     const i = document.getElementById('ideoolink')?.textContent || '';
                     const v = document.querySelector('#mainvideo, video')?.src || '';
-                    return r.includes('get_video') || i.includes('get_video') || v.startsWith('http');
+                    return nr.includes('get_video') || r.includes('get_video') || i.includes('get_video') || v.startsWith('http');
                 }, { timeout: 6000 }).catch(() => {});
 
                 const stUrl = await page.evaluate(() => {
+                    const norobot = document.getElementById('norobotlink')?.textContent?.trim();
                     const robot = document.getElementById('robotlink')?.textContent?.trim();
                     const ideoo = document.getElementById('ideoolink')?.textContent?.trim();
                     const mainVideo = document.querySelector('#mainvideo, video')?.src;
-                    const raw = robot || ideoo || mainVideo || '';
+                    const raw = norobot || robot || ideoo || mainVideo || '';
                     if (!raw) return null;
                     if (raw.startsWith('//')) return 'https:' + raw + (raw.includes('stream=1') ? '' : '&stream=1');
                     if (raw.startsWith('http')) return raw;
