@@ -327,49 +327,59 @@ class DoodstreamBot {
             try {
                 logger.download(`Memulai unduh: ${videoInfo.title || 'Video'}`);
 
-                const response = await axios({
-                    method: 'get',
-                    url: videoInfo.videoUrl,
-                    responseType: 'stream',
-                    timeout: 30000, // 30s connection/header timeout
-                    headers: {
-                        'Referer': referer,
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': '*/*',
-                        'Accept-Language': 'en-US,en;q=0.9'
-                    }
-                });
+                const isHlsUrl = /\.m3u8(\?|$)/i.test(videoInfo.videoUrl) || videoInfo.videoUrl.includes('.m3u8');
+                if (isHlsUrl) {
+                    logger.info('HLS (.m3u8) terdeteksi, mengunduh dengan ffmpeg...');
+                    await this.downloadHlsToMp4(videoInfo.videoUrl, referer, filePath);
+                } else {
+                    const response = await axios({
+                        method: 'get',
+                        url: videoInfo.videoUrl,
+                        responseType: 'stream',
+                        timeout: 30000, // 30s connection/header timeout
+                        headers: {
+                            'Referer': referer,
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': '*/*',
+                            'Accept-Language': 'en-US,en;q=0.9'
+                        }
+                    });
 
-                const contentType = (response.headers['content-type'] || '').toLowerCase();
-                if (contentType.includes('text/html') || contentType.includes('application/json')) {
-                    response.data.destroy();
-                    throw new Error(`Invalid video response (${contentType})`);
+                    const contentType = (response.headers['content-type'] || '').toLowerCase();
+                    if (contentType.includes('mpegurl')) {
+                        response.data.destroy();
+                        logger.info('HLS (mpegurl) terdeteksi dari header, mengunduh dengan ffmpeg...');
+                        await this.downloadHlsToMp4(videoInfo.videoUrl, referer, filePath);
+                    } else if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                        response.data.destroy();
+                        throw new Error(`Invalid video response (${contentType})`);
+                    } else {
+                        const totalSize = parseInt(response.headers['content-length']) || 0;
+                        logger.info(`CDN HTTP ${response.status} | Type: ${contentType || 'unknown'} | Size: ${totalSize ? formatFileSize(totalSize) : 'unknown'}`);
+                        let downloadedSize = 0;
+                        let lastProgress = 0;
+
+                        const writer = fs.createWriteStream(filePath);
+
+                        // Progress logging
+                        response.data.on('data', (chunk) => {
+                            downloadedSize += chunk.length;
+                            const progress = totalSize > 0 ? Math.floor((downloadedSize / totalSize) * 100) : 0;
+                            if (progress >= lastProgress + 20) { // Log every 20%
+                                logger.info(`Download progress: ${progress}% (${formatFileSize(downloadedSize)}/${formatFileSize(totalSize)})`);
+                                lastProgress = progress;
+                            }
+                        });
+
+                        response.data.pipe(writer);
+                        await new Promise((resolve, reject) => {
+                            const stuckTimer = setTimeout(() => reject(new Error('Download stuck timeout')), 180000);
+                            writer.on('finish', () => { clearTimeout(stuckTimer); resolve(); });
+                            writer.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
+                            response.data.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
+                        });
+                    }
                 }
-
-                const totalSize = parseInt(response.headers['content-length']) || 0;
-                logger.info(`CDN HTTP ${response.status} | Type: ${contentType || 'unknown'} | Size: ${totalSize ? formatFileSize(totalSize) : 'unknown'}`);
-                let downloadedSize = 0;
-                let lastProgress = 0;
-
-                const writer = fs.createWriteStream(filePath);
-
-                // Progress logging
-                response.data.on('data', (chunk) => {
-                    downloadedSize += chunk.length;
-                    const progress = totalSize > 0 ? Math.floor((downloadedSize / totalSize) * 100) : 0;
-                    if (progress >= lastProgress + 20) { // Log every 20%
-                        logger.info(`Download progress: ${progress}% (${formatFileSize(downloadedSize)}/${formatFileSize(totalSize)})`);
-                        lastProgress = progress;
-                    }
-                });
-
-                response.data.pipe(writer);
-                await new Promise((resolve, reject) => {
-                    const stuckTimer = setTimeout(() => reject(new Error('Download stuck timeout')), 180000);
-                    writer.on('finish', () => { clearTimeout(stuckTimer); resolve(); });
-                    writer.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
-                    response.data.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
-                });
 
                 const actualSize = fs.statSync(filePath).size;
                 if (!isValidVideoFile(filePath)) {
@@ -469,6 +479,31 @@ class DoodstreamBot {
                 ])
             );
         }
+    }
+
+    /**
+     * Download HLS (.m3u8) stream to MP4 using ffmpeg
+     */
+    async downloadHlsToMp4(hlsUrl, referer, outputPath) {
+        const { execFile } = require('child_process');
+        const headers = `Referer: ${referer}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n`;
+
+        return new Promise((resolve, reject) => {
+            execFile('ffmpeg', [
+                '-y',
+                '-headers', headers,
+                '-i', hlsUrl,
+                '-c', 'copy',
+                '-bsf:a', 'aac_adtstoasc',
+                '-movflags', '+faststart',
+                outputPath
+            ], { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+                if (err) {
+                    return reject(new Error(`ffmpeg HLS failed: ${err.message}`));
+                }
+                resolve();
+            });
+        });
     }
 
     /**
