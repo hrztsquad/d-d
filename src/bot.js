@@ -277,8 +277,8 @@ class DoodstreamBot {
                 }
             }
 
-            // Check if final URL is a direct video link (exclude fake direct links like cdn-vid)
-            const isFakeDirectLink = targetUrl.includes('cdn-vid') || targetUrl.includes('ct.ws');
+            // Check if final URL is a direct video link (exclude hosting pages that end with .mp4 like streamtape)
+            const isFakeDirectLink = /cdn-vid|ct\.ws|streamtape|strtape|stape|dood|playmog|filemoon|filelions|vidhide|voe|lulu/i.test(targetUrl);
             const isDirectLink = /\.(mp4|mkv|webm|avi|mov)(\?.*)?$/i.test(targetUrl) && !isFakeDirectLink;
 
             if (isDirectLink) {
@@ -555,8 +555,8 @@ class DoodstreamBot {
                 }
             }
 
-            // Check if direct link (exclude fake direct links like cdn-vid which use JS redirect)
-            const isFakeDirectLink = targetUrl.includes('cdn-vid') || targetUrl.includes('ct.ws');
+            // Check if direct link (exclude hosting pages that end with .mp4 like streamtape)
+            const isFakeDirectLink = /cdn-vid|ct\.ws|streamtape|strtape|stape|dood|playmog|filemoon|filelions|vidhide|voe|lulu/i.test(targetUrl);
             const isDirectLink = /\.(mp4|mkv|webm|avi|mov)(\?.*)?$/i.test(targetUrl) && !isFakeDirectLink;
 
             if (isDirectLink) {
