@@ -609,8 +609,8 @@ class DoodstreamBot {
                 }
             }
 
-            // Check if direct link (exclude hosting pages that end with .mp4 like streamtape)
-            const isFakeDirectLink = /cdn-vid|ct\.ws|streamtape|strtape|stape|dood|playmog|filemoon|filelions|vidhide|voe|lulu/i.test(targetUrl);
+            // Check if direct link (exclude hosting pages that end with .mp4 like streamtape/vidara)
+            const isFakeDirectLink = /cdn-vid|ct\.ws|streamtape|strtape|stape|dood|playmog|filemoon|filelions|vidhide|voe|lulu|vidara/i.test(targetUrl);
             const isDirectLink = /\.(mp4|mkv|webm|avi|mov)(\?.*)?$/i.test(targetUrl) && !isFakeDirectLink;
 
             if (isDirectLink) {
@@ -619,11 +619,20 @@ class DoodstreamBot {
                 const fileName = decodeURIComponent(urlPath.split('/').pop().replace(/\.(mp4|mkv|webm|avi|mov)$/i, ''));
                 videoInfo = { title: fileName || `Video ${index + 1}`, videoUrl: targetUrl };
             } else {
-                // Extract with timeout (30s max)
-                videoInfo = await Promise.race([
-                    this.extractor.extractVideoInfo(targetUrl),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 30000))
-                ]);
+                // Extract with timeout (30s max), fallback to HTTP extractor
+                try {
+                    videoInfo = await Promise.race([
+                        this.extractor.extractVideoInfo(targetUrl),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 30000))
+                    ]);
+                } catch (primaryErr) {
+                    if (this.extractorMode !== 'http') {
+                        logger.warn(`Batch primary extractor gagal (${primaryErr.message}), mencoba HTTP fallback...`);
+                        videoInfo = await this.httpExtractor.extractVideoInfo(targetUrl);
+                    } else {
+                        throw primaryErr;
+                    }
+                }
             }
 
             if (!videoInfo || !videoInfo.videoUrl) {
@@ -636,20 +645,47 @@ class DoodstreamBot {
             const referer = new URL(url).origin + '/';
             const filePath = path.join(this.downloadDir, `batch_${Date.now()}_${index}.mp4`);
 
-            const response = await axios({
-                method: 'get',
-                url: videoInfo.videoUrl,
-                responseType: 'stream',
-                timeout: 300000,
-                headers: { 'Referer': referer }
-            });
+            const isHlsUrl = /\.m3u8(\?|$)/i.test(videoInfo.videoUrl) || videoInfo.videoUrl.includes('.m3u8');
+            if (isHlsUrl) {
+                logger.info('Batch HLS (.m3u8) terdeteksi, mengunduh dengan ffmpeg...');
+                await this.downloadHlsToMp4(videoInfo.videoUrl, referer, filePath);
+            } else {
+                const response = await axios({
+                    method: 'get',
+                    url: videoInfo.videoUrl,
+                    responseType: 'stream',
+                    timeout: 30000,
+                    headers: {
+                        'Referer': referer,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': '*/*'
+                    }
+                });
 
-            const writer = fs.createWriteStream(filePath);
-            response.data.pipe(writer);
-            await new Promise((resolve, reject) => {
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-            });
+                const contentType = (response.headers['content-type'] || '').toLowerCase();
+                if (contentType.includes('mpegurl')) {
+                    response.data.destroy();
+                    logger.info('Batch HLS (mpegurl) terdeteksi dari header, mengunduh dengan ffmpeg...');
+                    await this.downloadHlsToMp4(videoInfo.videoUrl, referer, filePath);
+                } else if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                    response.data.destroy();
+                    throw new Error(`Invalid video response (${contentType})`);
+                } else {
+                    const writer = fs.createWriteStream(filePath);
+                    response.data.pipe(writer);
+                    await new Promise((resolve, reject) => {
+                        const stuckTimer = setTimeout(() => reject(new Error('Download stuck timeout')), 180000);
+                        writer.on('finish', () => { clearTimeout(stuckTimer); resolve(); });
+                        writer.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
+                        response.data.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
+                    });
+                }
+            }
+
+            if (!isValidVideoFile(filePath)) {
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                throw new Error('File video tidak valid atau terlalu kecil');
+            }
 
             const fileSize = fs.statSync(filePath).size;
             logger.download(`Unduhan selesai: ${videoInfo.title} (${formatFileSize(fileSize)})`);

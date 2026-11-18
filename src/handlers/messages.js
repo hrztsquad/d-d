@@ -78,38 +78,11 @@ function setupMessageHandlers(bot) {
             return;
         }
 
-        // Multiple URLs - Batch Download
-        const userId = ctx.from.id;
-        const quotaCost = validUrls.length * bot.quotaManager.DOWNLOAD_COST;
-        const currentQuota = bot.quotaManager.getQuota(userId);
+        // Multiple URLs - Batch Download immediately without confirmation
+        const isSubscribed = await bot.checkSubscription(ctx.from.id);
+        if (!isSubscribed) return bot.sendSubscribeMessage(ctx);
 
-        // Store batch URLs in memory
-        bot.pendingBatch = bot.pendingBatch || new Map();
-        const batchId = `batch_${userId}_${Date.now()}`;
-        bot.pendingBatch.set(batchId, {
-            userId,
-            urls: validUrls,
-            createdAt: Date.now()
-        });
-
-        // Auto-cleanup old batches after 5 minutes
-        setTimeout(() => bot.pendingBatch.delete(batchId), 5 * 60 * 1000);
-
-        const message = `📦 *Batch Download*\n\n` +
-            `🔗 Terdeteksi *${validUrls.length} video*\n` +
-            `💰 Total biaya: *${quotaCost} quota*\n` +
-            `📊 Saldo Anda: *${currentQuota} quota*\n\n` +
-            (currentQuota >= quotaCost
-                ? `✅ Quota cukup! Lanjutkan download?`
-                : `❌ Quota tidak cukup. Perlu top up.`);
-
-        await ctx.replyWithMarkdown(message, Markup.inlineKeyboard([
-            ...(currentQuota >= quotaCost
-                ? [[Markup.button.callback(`✅ Download Semua (${validUrls.length})`, `batch_confirm_${batchId}`)]]
-                : [[Markup.button.callback('💳 Top Up', 'show_topup')]]
-            ),
-            [Markup.button.callback('❌ Batal', 'back_to_start')]
-        ]));
+        await bot.handleBatchDownload(ctx, validUrls);
     });
 }
 
