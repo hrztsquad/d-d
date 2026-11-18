@@ -341,8 +341,9 @@ class DoodstreamExtractor {
                         const pUrl = p.url();
                         console.log(`[Doodstream] Checking page: ${pUrl}`);
 
-                        // Find a page that's not blank and is not the original blank page
-                        if (p !== page && pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome')) {
+                        // Find a page that's not blank, not chrome, and not an ad popup
+                        const isAdPopup = /stripchat|chaturbate|livejasmin|bongacams|camsoda|popads|exoclick|juicyads|adtng|greentraf/i.test(pUrl);
+                        if (p !== page && pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome') && !isAdPopup) {
                             console.log(`[Doodstream] Found popup with video: ${pUrl}`);
                             // Switch to this page
                             await page.close().catch(() => { });
@@ -462,26 +463,19 @@ class DoodstreamExtractor {
                     }
 
                     const passEndpoint = `${docOrigin}/pass_md5/${passMatch[1]}`;
-                    console.log(`[Doodstream] Extracting pass_md5 from captured HTML: ${passEndpoint}`);
+                    console.log(`[Doodstream] Extracting pass_md5 via browser: ${passEndpoint}`);
                     try {
-                        const axios = require('axios');
-                        const cookies = await page.cookies(docUrl).catch(() => []);
-                        const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-                        const passRes = await axios.get(passEndpoint, {
-                            headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                                'Referer': docUrl,
-                                ...(cookieHeader ? { 'Cookie': cookieHeader } : {})
-                            },
-                            timeout: 10000
-                        });
-                        if (passRes.data && typeof passRes.data === 'string' && passRes.data.includes('http')) {
+                        await page.setRequestInterception(false).catch(() => {});
+                        await page.setExtraHTTPHeaders({ 'Referer': docUrl });
+                        await page.goto(passEndpoint, { waitUntil: 'domcontentloaded', timeout: 10000 });
+                        const passText = await page.evaluate(() => (document.body?.innerText || document.body?.textContent || '').trim());
+                        if (passText && passText.includes('http')) {
                             const token = tokenMatch ? tokenMatch[1] : 'notoken';
-                            passMd5Url = passRes.data.trim() + this.generateUniqueParam(token);
-                            console.log('[Doodstream] Extracted pass_md5 from captured HTML successfully!');
+                            passMd5Url = passText + this.generateUniqueParam(token);
+                            console.log('[Doodstream] Extracted pass_md5 via browser successfully!');
                         }
                     } catch (e) {
-                        console.log(`[Doodstream] Captured HTML pass_md5 failed: ${e.message}`);
+                        console.log(`[Doodstream] Browser pass_md5 failed: ${e.message}`);
                     }
                 }
             }
