@@ -274,9 +274,22 @@ class DoodstreamExtractor {
                 request.continue();
             });
 
+            let capturedHtml = '';
+            let capturedDocUrl = '';
+
             page.on('response', async response => {
                 const resUrl = response.url();
                 const contentType = response.headers()['content-type'] || '';
+
+                if (contentType.includes('text/html') && response.status() === 200 && response.request().resourceType() === 'document') {
+                    try {
+                        const text = await response.text();
+                        if (text && text.length > capturedHtml.length) {
+                            capturedHtml = text;
+                            capturedDocUrl = resUrl;
+                        }
+                    } catch (e) { }
+                }
 
                 if (!contentType.includes('text/html') && (
                     contentType.includes('video') ||
@@ -433,10 +446,55 @@ class DoodstreamExtractor {
 
             // FAST METHOD: Try to extract via pass_md5 first (much faster!)
             console.log('[Doodstream] Trying FAST pass_md5 extraction...');
-            const passMd5Url = await this.extractViaPassMd5(page, finalUrl);
+            let passMd5Url = await this.extractViaPassMd5(page, finalUrl);
+
+            // Fallback: if page redirected to about:blank, use capturedHtml from the HTTP 200 document response
+            if (!passMd5Url && capturedHtml) {
+                const passMatch = capturedHtml.match(/\/pass_md5\/([^'"]+)/);
+                if (passMatch) {
+                    const docUrl = capturedDocUrl || targetUrl;
+                    const docOrigin = new URL(docUrl).origin;
+                    const tokenMatch = capturedHtml.match(/[?&]token=([a-zA-Z0-9]+)/) ||
+                        capturedHtml.match(/makePlay\s*\(\s*\)\s*\{[\s\S]*?token\s*=\s*['"]([^'"]+)['"]/);
+                    const titleMatch = capturedHtml.match(/<title>([^<]+)<\/title>/i);
+                    if (titleMatch && (!videoTitle || videoTitle === 'about:blank')) {
+                        videoTitle = titleMatch[1].replace(/\s*-\s*DoodStream/i, '').trim();
+                    }
+
+                    const passEndpoint = `${docOrigin}/pass_md5/${passMatch[1]}`;
+                    console.log(`[Doodstream] Extracting pass_md5 from captured HTML: ${passEndpoint}`);
+                    try {
+                        const axios = require('axios');
+                        const cookies = await page.cookies(docUrl).catch(() => []);
+                        const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+                        const passRes = await axios.get(passEndpoint, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Referer': docUrl,
+                                ...(cookieHeader ? { 'Cookie': cookieHeader } : {})
+                            },
+                            timeout: 10000
+                        });
+                        if (passRes.data && typeof passRes.data === 'string' && passRes.data.includes('http')) {
+                            const token = tokenMatch ? tokenMatch[1] : 'notoken';
+                            passMd5Url = passRes.data.trim() + this.generateUniqueParam(token);
+                            console.log('[Doodstream] Extracted pass_md5 from captured HTML successfully!');
+                        }
+                    } catch (e) {
+                        console.log(`[Doodstream] Captured HTML pass_md5 failed: ${e.message}`);
+                    }
+                }
+            }
+
             if (passMd5Url) {
                 capturedUrls.push(passMd5Url);
                 console.log('[Doodstream] FAST extraction successful!');
+                return {
+                    videoUrl: passMd5Url,
+                    title: this.sanitizeTitle(videoTitle),
+                    thumbnail: thumbnail,
+                    originalUrl: url
+                };
             } else {
                 console.log('[Doodstream] FAST extraction failed, falling back to click method...');
             }
