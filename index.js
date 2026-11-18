@@ -12,7 +12,7 @@ const createWebhookServer = require('./src/webhook');
 const logger = require('./src/logger');
 
 // Portal configuration
-const PORTAL_PORT = process.env.PORTAL_PORT || process.env.PORT || 3000;
+const PORTAL_PORT = process.env.PORTAL_PORT || 3005;
 const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD || 'kuduscity';
 const DOWNLOAD_DIR = path.resolve(process.env.DOWNLOAD_DIR || './downloads');
 const SESSION_SECRET = process.env.PORTAL_SECRET || crypto.createHash('sha256').update((process.env.BOT_TOKEN || 'd-d') + PORTAL_PASSWORD).digest('hex');
