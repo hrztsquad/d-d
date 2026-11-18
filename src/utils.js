@@ -16,7 +16,7 @@ function isValidDoodstreamUrl(url) {
         // Doodstream and variants
         'dood', 'doood', 'dooood', 'doodstream', 'doodster', 'd00d', 'd000d', 'd0000d', 'd0o0d', 'do0od', 'do-od',
         'doods', 'doodss', 'doodz', 'dooodz', 'doodp', 'doodx', 'doodw', 'doodf', 'doodvid', 'doodst', 'doodstr',
-        'ds2play', 'ds2video', 'myvidplay', 'videokitrsi', 'dood-hd',
+        'ds2play', 'ds2video', 'myvidplay', 'videokitrsi', 'dood-hd', 'playmogo', 'playmogul',
         // Poop variants (Doodstream mirrors)
         'poop', 'poophd', 'poopvid', 'poopvip', 'poopweb', 'poops', 'pooph', 'poodvid', 'poods', 'poo',
         // Lulu variants
@@ -41,6 +41,7 @@ function isValidDoodstreamUrl(url) {
     const fullDomainPatterns = [
         /doo+d/i,                    // Matches dood, doood, dooood, etc.
         /d0+d/i,                     // Matches d0d, d00d, d000d, etc.
+        /playmog(o|ul)/i,            // Matches playmogo.com, playmogul, etc.
         /poo+p/i,                    // Matches poop, pooop, etc.
         /filemoon/i,
         /filelions?/i,

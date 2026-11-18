@@ -47,6 +47,7 @@ const messages = {
 dood.watch, doodstream.com, dood.to
 dood.la, dood.pm, dood.wf, d00d.com
 myvidplay.com, dood-hd.com, lixey.org
+playmogo.com, playmogul.com
 
 *FILEMOON:*
 filemoon.sx, filemoon.to, moonmov.pro
