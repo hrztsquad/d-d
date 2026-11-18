@@ -384,7 +384,14 @@ class DoodstreamExtractor {
 
             // StreamTape fast extraction (robotlink / ideoolink / mainvideo)
             if (/streamtape|strtape|stape/i.test(finalUrl)) {
-                console.log('[StreamTape] Trying StreamTape DOM extraction...');
+                console.log('[StreamTape] Waiting for StreamTape video link...');
+                await page.waitForFunction(() => {
+                    const r = document.getElementById('robotlink')?.textContent || '';
+                    const i = document.getElementById('ideoolink')?.textContent || '';
+                    const v = document.querySelector('#mainvideo, video')?.src || '';
+                    return r.includes('get_video') || i.includes('get_video') || v.startsWith('http');
+                }, { timeout: 6000 }).catch(() => {});
+
                 const stUrl = await page.evaluate(() => {
                     const robot = document.getElementById('robotlink')?.textContent?.trim();
                     const ideoo = document.getElementById('ideoolink')?.textContent?.trim();
@@ -651,7 +658,12 @@ class DoodstreamExtractor {
             '.ico',
             '.svg',
             '.woff',
-            // Ad networks
+            // Ad networks & trackers
+            'mc.yandex.ru',
+            'yandex.ru',
+            'yandex.',
+            '/watch/',
+            'page-ref=',
             'bartcons.com',
             'adtng.com',
             'adzerk',
