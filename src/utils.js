@@ -211,6 +211,105 @@ async function followRedirect(url) {
     }
 }
 
+/**
+ * Check if a downloaded file is a real binary video (not HTML/JSON/HLS stub)
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function isValidVideoFile(filePath) {
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) return false;
+    const size = fs.statSync(filePath).size;
+    if (size < 50 * 1024) return false; // < 50 KB is not a valid video
+
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(64);
+    const bytesRead = fs.readSync(fd, buf, 0, 64, 0);
+    fs.closeSync(fd);
+
+    const head = buf.slice(0, bytesRead).toString('utf8').trimStart();
+    if (head.startsWith('<') || head.startsWith('{') || head.startsWith('[') || head.startsWith('#EXTM3U')) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Extract video width, height, duration using ffprobe or pure-JS MP4 tkhd fallback
+ * @param {string} filePath
+ * @returns {Promise<{width?: number, height?: number, duration?: number}>}
+ */
+async function getVideoMetadata(filePath) {
+    const { execFile } = require('child_process');
+    const fs = require('fs');
+
+    // 1. Try ffprobe if available
+    const ffprobeMeta = await new Promise((resolve) => {
+        execFile('ffprobe', [
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_streams',
+            '-show_format',
+            filePath
+        ], { timeout: 10000 }, (err, stdout) => {
+            if (err || !stdout) return resolve(null);
+            try {
+                const data = JSON.parse(stdout);
+                const videoStream = (data.streams || []).find(s => s.codec_type === 'video');
+                if (videoStream && videoStream.width && videoStream.height) {
+                    return resolve({
+                        width: parseInt(videoStream.width, 10),
+                        height: parseInt(videoStream.height, 10),
+                        duration: data.format?.duration ? Math.round(parseFloat(data.format.duration)) : undefined
+                    });
+                }
+            } catch (e) { }
+            resolve(null);
+        });
+    });
+
+    if (ffprobeMeta) return ffprobeMeta;
+
+    // 2. Pure-JS MP4 tkhd box fallback (checks start and end of file for moov/tkhd)
+    try {
+        const stat = fs.statSync(filePath);
+        const readChunk = (offset, length) => {
+            const fd = fs.openSync(filePath, 'r');
+            const b = Buffer.alloc(length);
+            const n = fs.readSync(fd, b, 0, length, offset);
+            fs.closeSync(fd);
+            return b.slice(0, n);
+        };
+
+        const chunkSize = Math.min(stat.size, 512 * 1024);
+        const buffers = [readChunk(0, chunkSize)];
+        if (stat.size > chunkSize) {
+            buffers.push(readChunk(Math.max(0, stat.size - chunkSize), chunkSize));
+        }
+
+        for (const buf of buffers) {
+            let idx = 0;
+            while ((idx = buf.indexOf('tkhd', idx)) !== -1) {
+                if (idx >= 4 && idx + 84 <= buf.length) {
+                    const version = buf.readUInt8(idx + 4);
+                    const widthOffset = version === 1 ? idx + 84 : idx + 72;
+                    const heightOffset = version === 1 ? idx + 88 : idx + 76;
+                    if (heightOffset + 4 <= buf.length) {
+                        const width = buf.readUInt32BE(widthOffset) >> 16;
+                        const height = buf.readUInt32BE(heightOffset) >> 16;
+                        if (width >= 64 && height >= 64 && width <= 7680 && height <= 4320) {
+                            return { width, height };
+                        }
+                    }
+                }
+                idx += 4;
+            }
+        }
+    } catch (e) { }
+
+    return {};
+}
+
 module.exports = {
     isValidDoodstreamUrl,
     extractFileCode,
@@ -219,5 +318,7 @@ module.exports = {
     delay,
     extractUrls,
     isRedirectWrapper,
-    followRedirect
+    followRedirect,
+    isValidVideoFile,
+    getVideoMetadata
 };

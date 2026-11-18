@@ -10,7 +10,7 @@ const YtdlpExtractor = require('./ytdlp');
 const HttpRegexExtractor = require('./http-extractor');
 const QuotaManager = require('./quota');
 const PaymentHandler = require('./payment');
-const { isValidDoodstreamUrl, formatFileSize, extractUrls, isRedirectWrapper, followRedirect } = require('./utils');
+const { isValidDoodstreamUrl, formatFileSize, extractUrls, isRedirectWrapper, followRedirect, isValidVideoFile, getVideoMetadata } = require('./utils');
 const messages = require('./messages');
 const logger = require('./logger');
 
@@ -359,17 +359,19 @@ class DoodstreamBot {
                 });
 
                 const actualSize = fs.statSync(filePath).size;
-                if (actualSize < 10240) {
-                    throw new Error(`File video kosong atau rusak (${actualSize} bytes)`);
+                if (!isValidVideoFile(filePath)) {
+                    throw new Error(`File video tidak valid atau terlalu kecil (${formatFileSize(actualSize)})`);
                 }
                 logger.download(`Unduhan selesai (${formatFileSize(actualSize)}), mengunggah ke Telegram...`);
+
+                const meta = await getVideoMetadata(filePath);
 
                 // Always try to upload to Telegram
                 await ctx.telegram.editMessageText(chatId, statusMsgId, null, `📤 Mengunggah ke Telegram... (${formatFileSize(actualSize)})`);
 
                 try {
                     const uploadStart = Date.now();
-                    logger.info(`Memulai upload: ${formatFileSize(actualSize)}...`);
+                    logger.info(`Memulai upload: ${formatFileSize(actualSize)}${meta.width ? ` (${meta.width}x${meta.height})` : ''}...`);
 
                     // Upload with timeout (5 minutes for large files)
                     await Promise.race([
@@ -377,7 +379,10 @@ class DoodstreamBot {
                             { source: filePath },
                             {
                                 caption: `🎬 *${videoInfo.title || 'Video'}*\n📁 ${formatFileSize(actualSize)}`,
-                                parse_mode: 'Markdown'
+                                parse_mode: 'Markdown',
+                                supports_streaming: true,
+                                ...(meta.width && meta.height ? { width: meta.width, height: meta.height } : {}),
+                                ...(meta.duration ? { duration: meta.duration } : {})
                             }
                         ),
                         new Promise((_, reject) =>
@@ -674,6 +679,8 @@ class DoodstreamBot {
                 try {
                     logger.info(`Mengirim ke Telegram: ${file.title} (${formatFileSize(file.size)})`);
 
+                    const meta = await getVideoMetadata(file.path);
+
                     // Try sending with timeout (5 minutes for large files)
                     let sendSuccess = false;
                     for (let attempt = 1; attempt <= 2 && !sendSuccess; attempt++) {
@@ -683,7 +690,10 @@ class DoodstreamBot {
                                     { source: file.path },
                                     {
                                         caption: `🎬 *${file.title}*\n📁 ${formatFileSize(file.size)}`,
-                                        parse_mode: 'Markdown'
+                                        parse_mode: 'Markdown',
+                                        supports_streaming: true,
+                                        ...(meta.width && meta.height ? { width: meta.width, height: meta.height } : {}),
+                                        ...(meta.duration ? { duration: meta.duration } : {})
                                     }
                                 ),
                                 new Promise((_, reject) =>

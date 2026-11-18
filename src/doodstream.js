@@ -154,23 +154,35 @@ class DoodstreamExtractor {
             const pageUrl = page.url();
             const pageOrigin = new URL(pageUrl).origin;
 
-            // Call pass_md5 endpoint
+            // Call pass_md5 endpoint inside browser context first (preserves Cloudflare/session cookies)
             const passMd5Url = `${pageOrigin}/pass_md5/${extractedData.passMd5}`;
             console.log(`[Doodstream] Calling pass_md5 endpoint...`);
 
-            const response = await axios.get(passMd5Url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': pageUrl,
-                    'Accept': '*/*'
-                },
-                timeout: 10000
-            });
+            let passMd5Data = await page.evaluate(async (endpoint) => {
+                try {
+                    const res = await fetch(endpoint, { credentials: 'include' });
+                    return await res.text();
+                } catch (e) {
+                    return null;
+                }
+            }, passMd5Url);
 
-            if (response.data && typeof response.data === 'string' && response.data.includes('http')) {
+            if (!passMd5Data || !passMd5Data.includes('http')) {
+                const response = await axios.get(passMd5Url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Referer': pageUrl,
+                        'Accept': '*/*'
+                    },
+                    timeout: 10000
+                });
+                passMd5Data = response.data;
+            }
+
+            if (passMd5Data && typeof passMd5Data === 'string' && passMd5Data.includes('http')) {
                 // Generate video URL with unique param
                 const token = extractedData.token || 'notoken';
-                const videoUrl = response.data + this.generateUniqueParam(token);
+                const videoUrl = passMd5Data.trim() + this.generateUniqueParam(token);
                 console.log(`[Doodstream] Generated video URL via pass_md5!`);
                 return videoUrl;
             }
