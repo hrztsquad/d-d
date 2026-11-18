@@ -1,4 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
+const https = require('https');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +21,7 @@ const setupMessageHandlers = require('./handlers/messages');
 
 class DoodstreamBot {
     constructor(token) {
-        // Configure Telegraf with optional local Bot API server
+        // Configure Telegraf with optional local Bot API server or env proxy agent
         const telegrafOptions = {};
 
         if (process.env.BOT_API_URL) {
@@ -29,6 +30,13 @@ class DoodstreamBot {
                 apiRoot: process.env.BOT_API_URL // e.g., http://localhost:8081
             };
             console.log('📡 Using Local Bot API Server:', process.env.BOT_API_URL);
+        }
+
+        if (process.env.HTTPS_PROXY || process.env.https_proxy) {
+            telegrafOptions.telegram = {
+                ...(telegrafOptions.telegram || {}),
+                agent: https.globalAgent
+            };
         }
 
         this.bot = new Telegraf(token, telegrafOptions);
