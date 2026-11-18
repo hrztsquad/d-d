@@ -73,7 +73,8 @@ class DoodstreamBot {
         this.waitingForUrl = new Map();
         this.userCooldowns = new Map();
         this.adminStates = new Map();
-        this.authenticatedUsers = new Set();
+        this.authFile = path.join('./data', 'auth.json');
+        this.authenticatedUsers = this.loadAuthUsers();
 
         // Queue system
         this.downloadQueue = [];
@@ -88,6 +89,23 @@ class DoodstreamBot {
 
         this.setupCommands();
         this.setupHandlers();
+    }
+
+    loadAuthUsers() {
+        try {
+            if (fs.existsSync(this.authFile)) {
+                const list = JSON.parse(fs.readFileSync(this.authFile, 'utf8'));
+                if (Array.isArray(list)) return new Set(list);
+            }
+        } catch (e) { }
+        return new Set();
+    }
+
+    saveAuthUsers() {
+        try {
+            fs.mkdirSync(path.dirname(this.authFile), { recursive: true });
+            fs.writeFileSync(this.authFile, JSON.stringify([...this.authenticatedUsers], null, 2));
+        } catch (e) { }
     }
 
     /**
@@ -129,6 +147,7 @@ class DoodstreamBot {
             const text = ctx.message && ctx.message.text ? ctx.message.text.trim() : '';
             if (text === this.BOT_PASSWORD) {
                 this.authenticatedUsers.add(userId);
+                this.saveAuthUsers();
                 await ctx.reply('✅ Password benar! Ketik /start untuk mulai.');
                 return;
             }
