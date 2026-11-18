@@ -99,8 +99,8 @@ class HttpRegexExtractor {
 
             // Pattern 4: Look for pass_md5 token generation
             if (!videoUrl) {
-                const passMd5Match = html.match(/\/pass_md5\/([^\/'"]+)/);
-                const tokenMatch = html.match(/makePlay\s*\(\s*\)\s*\{[^}]*token\s*=\s*["']([^"']+)["']/);
+                const passMd5Match = html.match(/\/pass_md5\/([^'"]+)/);
+                const tokenMatch = html.match(/[?&]token=([a-zA-Z0-9]+)/) || html.match(/makePlay\s*\(\s*\)\s*\{[^}]*token\s*=\s*["']([^"']+)["']/);
 
                 if (passMd5Match) {
                     // Need to fetch the pass_md5 endpoint
@@ -116,13 +116,13 @@ class HttpRegexExtractor {
                             timeout: this.timeout
                         });
 
-                        // The response should be the video URL or a token
+                        // The response should be the base video URL
                         if (passResponse.data && passResponse.data.includes('http')) {
-                            videoUrl = passResponse.data.trim();
-                            // Add random token
-                            const rand = Math.random().toString(36).substring(2, 12);
-                            const expiry = Date.now();
-                            videoUrl += `?token=${rand}&expiry=${expiry}`;
+                            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                            let rand = '';
+                            for (let i = 0; i < 10; i++) rand += chars.charAt(Math.floor(Math.random() * chars.length));
+                            const token = tokenMatch ? tokenMatch[1] : 'notoken';
+                            videoUrl = `${passResponse.data.trim()}${rand}?token=${token}&expiry=${Date.now()}`;
                             logger.info('[HTTP] Found via pass_md5 endpoint');
                         }
                     } catch (e) {

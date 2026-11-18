@@ -55,6 +55,7 @@ class DoodstreamBot {
             console.log('🎬 Extractor Mode: Puppeteer (browser)');
         }
         this.extractorMode = extractorMode;
+        this.httpExtractor = new HttpRegexExtractor();
 
         this.quotaManager = new QuotaManager('./data');
         this.isQrisEnabled = Boolean(process.env.CASHI_API_KEY);
@@ -296,13 +297,22 @@ class DoodstreamBot {
                     videoUrl: targetUrl
                 };
             } else {
-                // Extract video info from embed page (30s max)
-                videoInfo = await Promise.race([
-                    this.extractor.extractVideoInfo(targetUrl),
-                    new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error('Extraction timeout')), 30000)
-                    )
-                ]);
+                // Extract video info from embed page (30s max), fallback to HTTP extractor
+                try {
+                    videoInfo = await Promise.race([
+                        this.extractor.extractVideoInfo(targetUrl),
+                        new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error('Extraction timeout')), 30000)
+                        )
+                    ]);
+                } catch (primaryErr) {
+                    if (this.extractorMode !== 'http') {
+                        logger.warn(`Primary extractor gagal (${primaryErr.message}), mencoba HTTP fallback...`);
+                        videoInfo = await this.httpExtractor.extractVideoInfo(targetUrl);
+                    } else {
+                        throw primaryErr;
+                    }
+                }
 
                 extractionDone = true;
                 clearInterval(animationInterval);
