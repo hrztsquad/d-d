@@ -67,6 +67,7 @@ class DoodstreamBot {
         this.CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || '@your_channel';
         this.CHANNEL_ID = process.env.CHANNEL_ID || '-1001234567890';
         this.BOT_PASSWORD = process.env.BOT_PASSWORD || '';
+        this.KEEP_FILES = process.env.KEEP_FILES !== 'false';
         this.COOLDOWN_TIME = 30000; // 30 seconds
 
         // State management
@@ -341,7 +342,8 @@ class DoodstreamBot {
 
             // Download and send
             const referer = new URL(url).origin + '/';
-            const filePath = path.join(this.downloadDir, `${Date.now()}_video.mp4`);
+            const safeTitle = (videoInfo.title || 'video').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 60);
+            const filePath = path.join(this.downloadDir, `${safeTitle}_${Date.now()}.mp4`);
 
             try {
                 logger.download(`Memulai unduh: ${videoInfo.title || 'Video'}`);
@@ -462,7 +464,9 @@ class DoodstreamBot {
                     ]));
                 }
 
-                fs.unlinkSync(filePath);
+                if (!this.KEEP_FILES && fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
             } catch (downloadError) {
                 console.error('[Bot] Download error:', downloadError.message);
                 if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -662,7 +666,8 @@ class DoodstreamBot {
 
             // Download file
             const referer = new URL(url).origin + '/';
-            const filePath = path.join(this.downloadDir, `batch_${Date.now()}_${index}.mp4`);
+            const safeTitle = (videoInfo.title || `video_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 60);
+            const filePath = path.join(this.downloadDir, `${safeTitle}_${Date.now()}_${index}.mp4`);
 
             const isHlsUrl = /\.m3u8(\?|$)/i.test(videoInfo.videoUrl) || videoInfo.videoUrl.includes('.m3u8');
             if (isHlsUrl) {
@@ -829,13 +834,15 @@ class DoodstreamBot {
                     }
                 }
 
-                // Cleanup file
-                try {
-                    if (fs.existsSync(file.path)) {
-                        fs.unlinkSync(file.path);
+                // Cleanup file only if KEEP_FILES is false
+                if (!this.KEEP_FILES) {
+                    try {
+                        if (fs.existsSync(file.path)) {
+                            fs.unlinkSync(file.path);
+                        }
+                    } catch (e) {
+                        // Ignore cleanup errors
                     }
-                } catch (e) {
-                    // Ignore cleanup errors
                 }
             }
 
