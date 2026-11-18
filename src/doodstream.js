@@ -276,19 +276,22 @@ class DoodstreamExtractor {
 
             let capturedHtml = '';
             let capturedDocUrl = '';
+            const htmlPromises = [];
 
-            page.on('response', async response => {
+            page.on('response', response => {
                 const resUrl = response.url();
                 const contentType = response.headers()['content-type'] || '';
 
                 if (contentType.includes('text/html') && response.status() === 200 && response.request().resourceType() === 'document') {
-                    try {
-                        const text = await response.text();
-                        if (text && text.length > capturedHtml.length) {
-                            capturedHtml = text;
-                            capturedDocUrl = resUrl;
-                        }
-                    } catch (e) { }
+                    htmlPromises.push((async () => {
+                        try {
+                            const text = await response.text();
+                            if (text && text.length > capturedHtml.length) {
+                                capturedHtml = text;
+                                capturedDocUrl = resUrl;
+                            }
+                        } catch (e) { }
+                    })());
                 }
 
                 if (!contentType.includes('text/html') && (
@@ -450,6 +453,9 @@ class DoodstreamExtractor {
             let passMd5Url = await this.extractViaPassMd5(page, finalUrl);
 
             // Fallback: if page redirected to about:blank, use capturedHtml from the HTTP 200 document response
+            if (!passMd5Url) {
+                await Promise.allSettled(htmlPromises);
+            }
             if (!passMd5Url && capturedHtml) {
                 const passMatch = capturedHtml.match(/\/pass_md5\/([^'"]+)/);
                 if (passMatch) {
