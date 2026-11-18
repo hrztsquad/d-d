@@ -77,7 +77,13 @@ function resolveSafeMediaPath(filename) {
 
 const portalApp = express();
 portalApp.use(express.json());
-portalApp.use(express.static(path.join(__dirname, 'public')));
+portalApp.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        }
+    }
+}));
 
 portalApp.get('/api/auth', (req, res) => {
     res.json({ authenticated: isPortalAuthenticated(req) });
