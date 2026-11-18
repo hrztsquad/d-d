@@ -7,8 +7,9 @@ class QuotaManager {
         this.quotaFile = path.join(dataPath, 'quota.json');
         this.transactionFile = path.join(dataPath, 'transactions.json');
 
-        // Pricing
-        this.DOWNLOAD_COST = 1; // 1 quota per download
+        // Pricing & Quota mode
+        this.UNLIMITED_QUOTA = process.env.UNLIMITED_QUOTA !== 'false';
+        this.DOWNLOAD_COST = 1; // 1 quota per download (when limit is enabled)
         this.DAILY_BONUS = 50; // 50 quota daily bonus
         this.QUOTA_PACKAGES = [
             { id: 'pkg_100', quota: 100, price: 10000, label: '100 Quota - Rp 10.000' },
@@ -98,6 +99,7 @@ class QuotaManager {
      * @returns {boolean}
      */
     hasEnoughQuota(userId, amount = this.DOWNLOAD_COST) {
+        if (this.UNLIMITED_QUOTA) return true;
         return this.getQuota(userId) >= amount;
     }
 
@@ -109,6 +111,12 @@ class QuotaManager {
      */
     deductQuota(userId, amount = this.DOWNLOAD_COST) {
         const user = this.getUser(userId);
+        if (this.UNLIMITED_QUOTA) {
+            user.totalDownloads += 1;
+            user.lastActive = new Date().toISOString();
+            this.saveQuota();
+            return true;
+        }
         if (user.quota < amount) {
             return false;
         }

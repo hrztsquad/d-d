@@ -382,6 +382,30 @@ class DoodstreamExtractor {
                 console.log('[Doodstream] Could not extract thumbnail');
             }
 
+            // StreamTape fast extraction (robotlink / ideoolink / mainvideo)
+            if (/streamtape|strtape|stape/i.test(finalUrl)) {
+                console.log('[StreamTape] Trying StreamTape DOM extraction...');
+                const stUrl = await page.evaluate(() => {
+                    const robot = document.getElementById('robotlink')?.textContent?.trim();
+                    const ideoo = document.getElementById('ideoolink')?.textContent?.trim();
+                    const mainVideo = document.querySelector('#mainvideo, video')?.src;
+                    const raw = robot || ideoo || mainVideo || '';
+                    if (!raw) return null;
+                    if (raw.startsWith('//')) return 'https:' + raw + (raw.includes('stream=1') ? '' : '&stream=1');
+                    if (raw.startsWith('http')) return raw;
+                    return null;
+                });
+                if (stUrl) {
+                    console.log('[StreamTape] Extracted video URL successfully!');
+                    return {
+                        videoUrl: stUrl,
+                        title: this.sanitizeTitle(videoTitle),
+                        thumbnail: thumbnail,
+                        originalUrl: url
+                    };
+                }
+            }
+
             // FAST METHOD: Try to extract via pass_md5 first (much faster!)
             console.log('[Doodstream] Trying FAST pass_md5 extraction...');
             const passMd5Url = await this.extractViaPassMd5(page, finalUrl);
@@ -667,9 +691,9 @@ class DoodstreamExtractor {
             return hlsUrls[0];
         }
 
-        // Return any URL with get_file or download
+        // Return any URL with get_file, get_video, or download
         const downloadUrls = uniqueUrls.filter(url =>
-            url.includes('get_file') || url.includes('download')
+            url.includes('get_file') || url.includes('get_video') || url.includes('download')
         );
         if (downloadUrls.length > 0) {
             return downloadUrls[downloadUrls.length - 1];

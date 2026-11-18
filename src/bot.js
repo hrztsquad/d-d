@@ -393,7 +393,8 @@ class DoodstreamBot {
                     const newQuota = this.quotaManager.getQuota(userId);
 
                     await ctx.telegram.deleteMessage(chatId, statusMsgId).catch(() => { });
-                    await ctx.reply(`💰 Sisa quota: *${newQuota}*`, { parse_mode: 'Markdown' });
+                    const quotaDisplay = this.quotaManager.UNLIMITED_QUOTA ? '∞ (Unlimited)' : newQuota;
+                    await ctx.reply(`💰 Sisa quota: *${quotaDisplay}*`, { parse_mode: 'Markdown' });
                     logger.success(`Video berhasil dikirim ke user ${userId}`);
                 } catch (uploadError) {
                     logger.warn(`Upload gagal, memberikan link: ${uploadError.message}`);

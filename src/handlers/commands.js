@@ -31,8 +31,9 @@ function setupCommandHandlers(bot) {
             buttons.push([Markup.button.callback('🛠 Admin Panel', 'admin_panel')]);
         }
 
+        const quotaDisplay = bot.quotaManager.UNLIMITED_QUOTA ? '∞ (Unlimited)' : quota;
         await ctx.replyWithMarkdown(
-            `🎬 *Selamat datang di Video Downloader Bot!*\n\n💰 Quota Anda: *${quota}*\n📥 Biaya: *${bot.quotaManager.DOWNLOAD_COST} quota/download*\n\nKirim link video untuk download!`,
+            `🎬 *Selamat datang di Video Downloader Bot!*\n\n💰 Quota Anda: *${quotaDisplay}*\n\nKirim link video untuk download!`,
             Markup.inlineKeyboard(buttons)
         );
     });
