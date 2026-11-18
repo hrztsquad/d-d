@@ -6,6 +6,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 const express = require('express');
 const DoodstreamBot = require('./src/bot');
 const createWebhookServer = require('./src/webhook');
@@ -15,12 +16,16 @@ const logger = require('./src/logger');
 const PORTAL_PORT = process.env.PORTAL_PORT || 3005;
 const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD || 'kuduscity';
 const DOWNLOAD_DIR = path.resolve(process.env.DOWNLOAD_DIR || './downloads');
+const THUMB_DIR = path.join(DOWNLOAD_DIR, '.thumbs');
 const SESSION_SECRET = process.env.PORTAL_SECRET || crypto.createHash('sha256').update((process.env.BOT_TOKEN || 'd-d') + PORTAL_PASSWORD).digest('hex');
 const COOKIE_NAME = 'dd_portal_auth';
 const VIDEO_EXT_RE = /\.(mp4|mkv|webm|mov|avi)$/i;
 
 if (!fs.existsSync(DOWNLOAD_DIR)) {
     fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+}
+if (!fs.existsSync(THUMB_DIR)) {
+    fs.mkdirSync(THUMB_DIR, { recursive: true });
 }
 
 function signToken(payload) {
@@ -180,6 +185,53 @@ portalApp.get('/media/:filename', requirePortalAuth, (req, res) => {
     }
 });
 
+portalApp.get('/thumb/:filename', requirePortalAuth, (req, res) => {
+    const filePath = resolveSafeMediaPath(req.params.filename);
+    if (!filePath || !fs.existsSync(filePath)) {
+        return res.status(404).send('Not found');
+    }
+
+    const base = path.basename(filePath);
+    const thumbPath = path.join(THUMB_DIR, `${base}.jpg`);
+
+    try {
+        if (fs.existsSync(thumbPath)) {
+            const vStat = fs.statSync(filePath);
+            const tStat = fs.statSync(thumbPath);
+            if (tStat.size > 0 && tStat.mtimeMs >= vStat.mtimeMs) {
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                return res.sendFile(thumbPath);
+            }
+        }
+    } catch { /* regenerate */ }
+
+    const runFfmpeg = (seekTime, cb) => {
+        execFile('ffmpeg', [
+            '-y',
+            '-ss', seekTime,
+            '-i', filePath,
+            '-vframes', '1',
+            '-vf', 'scale=320:-2',
+            '-q:v', '5',
+            thumbPath
+        ], { timeout: 15000 }, cb);
+    };
+
+    runFfmpeg('00:00:02', (err) => {
+        if (!err && fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 0) {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.sendFile(thumbPath);
+        }
+        runFfmpeg('00:00:00', (err2) => {
+            if (!err2 && fs.existsSync(thumbPath) && fs.statSync(thumbPath).size > 0) {
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                return res.sendFile(thumbPath);
+            }
+            return res.status(404).send('Thumbnail unavailable');
+        });
+    });
+});
+
 portalApp.delete('/api/files/:filename', requirePortalAuth, (req, res) => {
     const filePath = resolveSafeMediaPath(req.params.filename);
     if (!filePath || !fs.existsSync(filePath)) {
@@ -187,6 +239,10 @@ portalApp.delete('/api/files/:filename', requirePortalAuth, (req, res) => {
     }
     try {
         fs.unlinkSync(filePath);
+        const thumbPath = path.join(THUMB_DIR, `${path.basename(filePath)}.jpg`);
+        if (fs.existsSync(thumbPath)) {
+            fs.unlinkSync(thumbPath);
+        }
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
