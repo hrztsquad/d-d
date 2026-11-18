@@ -331,10 +331,12 @@ class DoodstreamBot {
                     method: 'get',
                     url: videoInfo.videoUrl,
                     responseType: 'stream',
-                    timeout: 180000, // 3 minutes timeout
+                    timeout: 30000, // 30s connection/header timeout
                     headers: {
                         'Referer': referer,
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': '*/*',
+                        'Accept-Language': 'en-US,en;q=0.9'
                     }
                 });
 
@@ -345,6 +347,7 @@ class DoodstreamBot {
                 }
 
                 const totalSize = parseInt(response.headers['content-length']) || 0;
+                logger.info(`CDN HTTP ${response.status} | Type: ${contentType || 'unknown'} | Size: ${totalSize ? formatFileSize(totalSize) : 'unknown'}`);
                 let downloadedSize = 0;
                 let lastProgress = 0;
 
@@ -362,10 +365,10 @@ class DoodstreamBot {
 
                 response.data.pipe(writer);
                 await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                    // Timeout for stuck downloads
-                    setTimeout(() => reject(new Error('Download stuck timeout')), 180000);
+                    const stuckTimer = setTimeout(() => reject(new Error('Download stuck timeout')), 180000);
+                    writer.on('finish', () => { clearTimeout(stuckTimer); resolve(); });
+                    writer.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
+                    response.data.on('error', (err) => { clearTimeout(stuckTimer); reject(err); });
                 });
 
                 const actualSize = fs.statSync(filePath).size;

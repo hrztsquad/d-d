@@ -465,7 +465,6 @@ class DoodstreamExtractor {
                     const passEndpoint = `${docOrigin}/pass_md5/${passMatch[1]}`;
                     console.log(`[Doodstream] Extracting pass_md5 via browser: ${passEndpoint}`);
                     try {
-                        await page.setRequestInterception(false).catch(() => {});
                         await page.setExtraHTTPHeaders({ 'Referer': docUrl });
                         await page.goto(passEndpoint, { waitUntil: 'domcontentloaded', timeout: 10000 });
                         const passText = await page.evaluate(() => (document.body?.innerText || document.body?.textContent || '').trim());
