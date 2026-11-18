@@ -26,9 +26,8 @@ const messages = {
 4️⃣ Video akan dikirim ke chat Anda!
 
 *Harga:*
-• 1 download = 15 quota
-• 100 quota = Rp 10.000
-• User baru dapat 50 quota gratis!
+• 1 download = 1 quota
+• User baru dapat 100 quota gratis!
 
 *Tips:*
 ✅ Video max 50MB dikirim langsung ke Telegram

@@ -322,8 +322,17 @@ class DoodstreamBot {
                     url: videoInfo.videoUrl,
                     responseType: 'stream',
                     timeout: 180000, // 3 minutes timeout
-                    headers: { 'Referer': referer }
+                    headers: {
+                        'Referer': referer,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    }
                 });
+
+                const contentType = (response.headers['content-type'] || '').toLowerCase();
+                if (contentType.includes('text/html') || contentType.includes('application/json')) {
+                    response.data.destroy();
+                    throw new Error(`Invalid video response (${contentType})`);
+                }
 
                 const totalSize = parseInt(response.headers['content-length']) || 0;
                 let downloadedSize = 0;
@@ -350,6 +359,9 @@ class DoodstreamBot {
                 });
 
                 const actualSize = fs.statSync(filePath).size;
+                if (actualSize < 10240) {
+                    throw new Error(`File video kosong atau rusak (${actualSize} bytes)`);
+                }
                 logger.download(`Unduhan selesai (${formatFileSize(actualSize)}), mengunggah ke Telegram...`);
 
                 // Always try to upload to Telegram

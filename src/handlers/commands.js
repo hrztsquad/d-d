@@ -32,7 +32,7 @@ function setupCommandHandlers(bot) {
         }
 
         await ctx.replyWithMarkdown(
-            `🎬 *Selamat datang di Video Downloader Bot!*\n\n💰 Quota Anda: *${quota}*\n📥 Biaya: *15 quota/download*\n\nKirim link video untuk download!`,
+            `🎬 *Selamat datang di Video Downloader Bot!*\n\n💰 Quota Anda: *${quota}*\n📥 Biaya: *${bot.quotaManager.DOWNLOAD_COST} quota/download*\n\nKirim link video untuk download!`,
             Markup.inlineKeyboard(buttons)
         );
     });
@@ -47,7 +47,7 @@ function setupCommandHandlers(bot) {
         const userId = ctx.from.id;
         const quota = bot.quotaManager.getQuota(userId);
         const user = bot.quotaManager.getUser(userId);
-        const possibleDownloads = Math.floor(quota / 15);
+        const possibleDownloads = Math.floor(quota / bot.quotaManager.DOWNLOAD_COST);
 
         const quotaButtons = [];
         if (bot.isQrisEnabled) {

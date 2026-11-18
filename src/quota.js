@@ -8,7 +8,7 @@ class QuotaManager {
         this.transactionFile = path.join(dataPath, 'transactions.json');
 
         // Pricing
-        this.DOWNLOAD_COST = 15; // 15 quota per download
+        this.DOWNLOAD_COST = 1; // 1 quota per download
         this.DAILY_BONUS = 50; // 50 quota daily bonus
         this.QUOTA_PACKAGES = [
             { id: 'pkg_100', quota: 100, price: 10000, label: '100 Quota - Rp 10.000' },
@@ -18,7 +18,7 @@ class QuotaManager {
         ];
 
         // Free quota for new users
-        this.FREE_QUOTA = 50;
+        this.FREE_QUOTA = 100;
 
         this.ensureDataDir();
         this.loadData();

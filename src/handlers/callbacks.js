@@ -94,7 +94,7 @@ function setupCallbackHandlers(bot) {
         }
 
         await ctx.editMessageText(
-            `🎬 *Selamat datang di Video Downloader Bot!*\n\n💰 Quota Anda: *${quota}*\n📥 Biaya: *15 quota/download*\n\nKirim link video untuk download!`,
+            `🎬 *Selamat datang di Video Downloader Bot!*\n\n💰 Quota Anda: *${quota}*\n📥 Biaya: *${bot.quotaManager.DOWNLOAD_COST} quota/download*\n\nKirim link video untuk download!`,
             {
                 parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([
@@ -113,7 +113,7 @@ function setupCallbackHandlers(bot) {
         bot.waitingForUrl.set(ctx.from.id, true);
 
         await ctx.editMessageText(
-            `📥 *Download Video*\n\nKirim link video yang ingin didownload.\n\n💰 Biaya: *15 quota/download*`,
+            `📥 *Download Video*\n\nKirim link video yang ingin didownload.\n\n💰 Biaya: *${bot.quotaManager.DOWNLOAD_COST} quota/download*`,
             {
                 parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([
