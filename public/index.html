@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>-d</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #09090b;
+      --surface: #111114;
+      --border: #27272a;
+      --border-focus: #52525b;
+      --text: #fafafa;
+      --muted: #71717a;
+      --error: #ef4444;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 280px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      text-align: center;
+      transition: border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-focus);
+    }
+
+    .brand {
+      display: inline-block;
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+      text-decoration: none;
+    }
+
+    .gate {
+      margin-top: 20px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .gate input {
+      flex: 1;
+      min-width: 0;
+      height: 38px;
+      padding: 0 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      letter-spacing: 0.15em;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .gate input:focus {
+      border-color: var(--border-focus);
+    }
+
+    .gate input.invalid {
+      border-color: var(--error);
+    }
+
+    .gate button {
+      width: 38px;
+      height: 38px;
+      flex-shrink: 0;
+      background: var(--text);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.15s ease;
+    }
+
+    .gate button:hover {
+      opacity: 0.88;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <a id="portal-link" class="brand" href="#open">-d</a>
+
+    <form id="gate-form" class="gate" autocomplete="off">
+      <input
+        id="password-input"
+        type="password"
+        inputmode="numeric"
+        placeholder="•••••"
+        aria-label="Password"
+      />
+      <button type="submit" aria-label="Masuk">→</button>
+    </form>
+  </main>
+
+  <script>
+    // Set REQUIRE_PASSWORD to false to open directly without password
+    const REQUIRE_PASSWORD = true;
+    const PORTAL_PASSWORD = "12345";
+    const BOT_URL = "https://t.me/forumsemprot_bot";
+
+    const portalLink = document.getElementById("portal-link");
+    const gateForm = document.getElementById("gate-form");
+    const passwordInput = document.getElementById("password-input");
+
+    if (!REQUIRE_PASSWORD) {
+      gateForm.classList.add("hidden");
+      portalLink.href = BOT_URL;
+    } else {
+      portalLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        passwordInput.focus();
+      });
+
+      gateForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (passwordInput.value.trim() === PORTAL_PASSWORD) {
+          window.location.href = BOT_URL;
+        } else {
+          passwordInput.classList.add("invalid");
+          passwordInput.value = "";
+          passwordInput.focus();
+        }
+      });
+
+      passwordInput.addEventListener("input", () => {
+        passwordInput.classList.remove("invalid");
+      });
+    }
+  </script>
+</body>
+</html>
