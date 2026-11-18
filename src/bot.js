@@ -109,6 +109,36 @@ class DoodstreamBot {
         } catch (e) { }
     }
 
+    sanitizeTitle(title, fallback = 'video') {
+        const cleaned = (title || fallback)
+            .replace(/[^a-zA-Z0-9._-]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 80);
+        return cleaned || fallback;
+    }
+
+    findExistingVideoByTitle(safeTitle) {
+        if (!safeTitle || safeTitle === 'video' || /^video_\d+$/.test(safeTitle)) {
+            return null;
+        }
+        try {
+            const lowerTitle = safeTitle.toLowerCase();
+            const entries = fs.readdirSync(this.downloadDir);
+            for (const name of entries) {
+                if (!/\.(mp4|mkv|webm|mov|avi)$/i.test(name)) continue;
+                const stem = name.replace(/\.[^.]+$/, '').toLowerCase();
+                if (stem === lowerTitle || new RegExp(`^${lowerTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_\\d+(?:_\\d+)?$`).test(stem)) {
+                    const full = path.join(this.downloadDir, name);
+                    if (fs.statSync(full).size > 0) {
+                        return name;
+                    }
+                }
+            }
+        } catch (e) { }
+        return null;
+    }
+
     /**
      * Setup bot commands in Telegram menu
      */
@@ -338,12 +368,27 @@ class DoodstreamBot {
                 clearInterval(animationInterval);
             }
 
+            // Check duplicate by title before downloading
+            const safeTitle = this.sanitizeTitle(videoInfo.title, 'video');
+            const existingFile = this.findExistingVideoByTitle(safeTitle);
+            if (existingFile) {
+                logger.info(`Lewati unduhan duplikat: ${existingFile}`);
+                await ctx.telegram.editMessageText(
+                    chatId,
+                    statusMsgId,
+                    null,
+                    `⏭️ Video dengan judul "${videoInfo.title || safeTitle}" sudah ada (\`${existingFile}\`), tidak diunduh ulang.`,
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+                return;
+            }
+
             await ctx.telegram.editMessageText(chatId, statusMsgId, null, '📥 Mengunduh video...');
 
             // Download and send
             const referer = new URL(url).origin + '/';
-            const safeTitle = (videoInfo.title || 'video').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 60);
-            const filePath = path.join(this.downloadDir, `${safeTitle}_${Date.now()}.mp4`);
+            const fileName = safeTitle === 'video' ? `${safeTitle}_${Date.now()}.mp4` : `${safeTitle}.mp4`;
+            const filePath = path.join(this.downloadDir, fileName);
 
             try {
                 logger.download(`Memulai unduh: ${videoInfo.title || 'Video'}`);
@@ -664,10 +709,20 @@ class DoodstreamBot {
 
             logger.extract(`Link ditemukan: ${videoInfo.title || 'Video'}`);
 
+            // Check duplicate by title before downloading
+            const fallbackTitle = `video_${index + 1}`;
+            const safeTitle = this.sanitizeTitle(videoInfo.title, fallbackTitle);
+            const existingFile = this.findExistingVideoByTitle(safeTitle);
+            if (existingFile) {
+                logger.info(`Lewati batch duplikat: ${existingFile}`);
+                await ctx.reply(`⏭️ [${index + 1}/${total}] Dilewati (sudah ada): ${existingFile}`).catch(() => {});
+                return;
+            }
+
             // Download file
             const referer = new URL(url).origin + '/';
-            const safeTitle = (videoInfo.title || `video_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 60);
-            const filePath = path.join(this.downloadDir, `${safeTitle}_${Date.now()}_${index}.mp4`);
+            const fileName = safeTitle === fallbackTitle ? `${safeTitle}_${Date.now()}.mp4` : `${safeTitle}.mp4`;
+            const filePath = path.join(this.downloadDir, fileName);
 
             const isHlsUrl = /\.m3u8(\?|$)/i.test(videoInfo.videoUrl) || videoInfo.videoUrl.includes('.m3u8');
             if (isHlsUrl) {
