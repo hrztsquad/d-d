@@ -317,7 +317,7 @@
     }
 
     async function checkAuth() {
-      const res = await fetch("/api/auth");
+      const res = await fetch("api/auth");
       const data = await res.json();
       if (data.authenticated) {
         showApp();
@@ -340,7 +340,7 @@
 
     async function loadFiles() {
       fileList.innerHTML = '<div class="empty">Memuat...</div>';
-      const res = await fetch("/api/files");
+      const res = await fetch("api/files");
       if (res.status === 401) return showLogin();
       const data = await res.json();
       const files = data.files || [];
@@ -378,7 +378,7 @@
         const dlBtn = document.createElement("a");
         dlBtn.className = "btn";
         dlBtn.textContent = "⬇ Unduh";
-        dlBtn.href = `/media/${encodeURIComponent(f.name)}?download=1`;
+        dlBtn.href = `media/${encodeURIComponent(f.name)}?download=1`;
 
         const delBtn = document.createElement("button");
         delBtn.className = "btn btn-danger";
@@ -397,7 +397,7 @@
 
     function openPlayer(name) {
       playerTitle.textContent = name;
-      playerVideo.src = `/media/${encodeURIComponent(name)}`;
+      playerVideo.src = `media/${encodeURIComponent(name)}`;
       playerModal.classList.remove("hidden");
       playerVideo.play().catch(() => {});
     }
@@ -411,14 +411,14 @@
 
     async function deleteFile(name) {
       if (!confirm(`Hapus file "${name}"?`)) return;
-      const res = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const res = await fetch(`api/files/${encodeURIComponent(name)}`, { method: "DELETE" });
       if (res.status === 401) return showLogin();
       await loadFiles();
     }
 
     gateForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const res = await fetch("/api/login", {
+      const res = await fetch("api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: passwordInput.value.trim() })
@@ -436,7 +436,7 @@
     passwordInput.addEventListener("input", () => passwordInput.classList.remove("invalid"));
     refreshBtn.addEventListener("click", loadFiles);
     logoutBtn.addEventListener("click", async () => {
-      await fetch("/api/logout", { method: "POST" });
+      await fetch("api/logout", { method: "POST" });
       showLogin();
     });
     closePlayer.addEventListener("click", hidePlayer);
