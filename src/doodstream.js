@@ -288,11 +288,11 @@ class DoodstreamExtractor {
                 }
             });
 
-            // Convert /s/ URL to /e/ URL (share links often have issues)
+            // Convert /s/ or /d/ URL to /e/ embed URL (download/share pages lack the embed player & pass_md5)
             let targetUrl = url;
-            if (url.includes('/s/')) {
-                targetUrl = url.replace('/s/', '/e/');
-                console.log(`[Doodstream] Converting /s/ to /e/: ${targetUrl}`);
+            if (/\/(s|d)\//.test(url)) {
+                targetUrl = url.replace(/\/(s|d)\//, '/e/');
+                console.log(`[Doodstream] Converting to /e/: ${targetUrl}`);
             }
 
             // Navigate to the page (FAST MODE uses domcontentloaded)
