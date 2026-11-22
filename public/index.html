@@ -316,6 +316,84 @@
       background: #000;
       display: block;
     }
+
+    /* Web Downloader Box */
+    .dl-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dl-box textarea {
+      width: 100%;
+      min-height: 74px;
+      resize: vertical;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 10px 12px;
+      outline: none;
+    }
+
+    .dl-box textarea:focus { border-color: var(--border-focus); }
+    .dl-box textarea::placeholder { color: var(--muted); }
+
+    .dl-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .dl-msg {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .jobs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .job {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .job-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .job-status {
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .job-status.done { color: #4ade80; }
+    .job-status.error { color: var(--danger); }
+    .job-status.skipped { color: #fbbf24; }
   </style>
 </head>
 <body>
@@ -354,6 +432,19 @@
       </div>
     </header>
 
+    <form id="dl-form" class="dl-box">
+      <textarea id="dl-input" placeholder="Tempel 1 atau banyak link video (1 link per baris: Vidara, StreamTape, Doodstream, dll.)"></textarea>
+      <div class="dl-row">
+        <span id="dl-msg" class="dl-msg"></span>
+        <div style="display:flex;gap:8px;">
+          <button id="clear-jobs-btn" type="button" class="btn hidden">Bersihkan Riwayat</button>
+          <button id="dl-btn" type="submit" class="btn">⬇ Download</button>
+        </div>
+      </div>
+    </form>
+
+    <div id="jobs-list" class="jobs hidden"></div>
+
     <div id="file-list" class="list"></div>
   </div>
 
@@ -373,6 +464,12 @@
     const appView = document.getElementById("app-view");
     const gateForm = document.getElementById("gate-form");
     const passwordInput = document.getElementById("password-input");
+    const dlForm = document.getElementById("dl-form");
+    const dlInput = document.getElementById("dl-input");
+    const dlBtn = document.getElementById("dl-btn");
+    const dlMsg = document.getElementById("dl-msg");
+    const clearJobsBtn = document.getElementById("clear-jobs-btn");
+    const jobsList = document.getElementById("jobs-list");
     const fileList = document.getElementById("file-list");
     const statsEl = document.getElementById("stats");
     const viewGridBtn = document.getElementById("view-grid-btn");
@@ -564,8 +661,106 @@
     });
 
     passwordInput.addEventListener("input", () => passwordInput.classList.remove("invalid"));
-    refreshBtn.addEventListener("click", loadFiles);
+    let jobTimer = null;
+    let lastDoneCount = 0;
+
+    async function loadJobs() {
+      const res = await fetch("api/jobs");
+      if (res.status === 401) return;
+      const data = await res.json();
+      const jobs = data.jobs || [];
+
+      if (jobs.length === 0) {
+        jobsList.classList.add("hidden");
+        clearJobsBtn.classList.add("hidden");
+        jobsList.innerHTML = "";
+        if (jobTimer) {
+          clearInterval(jobTimer);
+          jobTimer = null;
+        }
+        return;
+      }
+
+      jobsList.classList.remove("hidden");
+      const hasFinished = jobs.some(j => ["done", "skipped", "error"].includes(j.status));
+      clearJobsBtn.classList.toggle("hidden", !hasFinished);
+
+      jobsList.innerHTML = "";
+      for (const j of jobs) {
+        const row = document.createElement("div");
+        row.className = "job";
+
+        const titleEl = document.createElement("span");
+        titleEl.className = "job-title";
+        titleEl.textContent = j.filename || j.title || j.url;
+
+        const statusEl = document.createElement("span");
+        statusEl.className = `job-status ${j.status}`;
+        statusEl.textContent = j.message || j.status;
+
+        row.appendChild(titleEl);
+        row.appendChild(statusEl);
+        jobsList.appendChild(row);
+      }
+
+      const doneCount = jobs.filter(j => j.status === "done").length;
+      if (doneCount > lastDoneCount) {
+        lastDoneCount = doneCount;
+        await loadFiles();
+      }
+
+      const hasActive = jobs.some(j => ["queued", "extracting", "downloading"].includes(j.status));
+      if (hasActive && !jobTimer) {
+        jobTimer = setInterval(loadJobs, 2000);
+      } else if (!hasActive && jobTimer) {
+        clearInterval(jobTimer);
+        jobTimer = null;
+      }
+    }
+
+    dlForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const urls = dlInput.value.trim();
+      if (!urls) return;
+
+      dlBtn.disabled = true;
+      dlMsg.textContent = "Menambahkan ke antrean...";
+      try {
+        const res = await fetch("api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls })
+        });
+        const data = await res.json();
+        if (res.status === 401) return showLogin();
+        if (!res.ok) {
+          dlMsg.textContent = data.error || "Link tidak valid";
+        } else {
+          dlInput.value = "";
+          dlMsg.textContent = `${data.added} link ditambahkan ke antrean.`;
+          await loadJobs();
+        }
+      } catch (err) {
+        dlMsg.textContent = "Gagal menghubungi server";
+      } finally {
+        dlBtn.disabled = false;
+      }
+    });
+
+    clearJobsBtn.addEventListener("click", async () => {
+      await fetch("api/jobs", { method: "DELETE" });
+      await loadJobs();
+    });
+
+    refreshBtn.addEventListener("click", () => {
+      loadFiles();
+      loadJobs();
+    });
     logoutBtn.addEventListener("click", async () => {
+      if (jobTimer) {
+        clearInterval(jobTimer);
+        jobTimer = null;
+      }
       await fetch("api/logout", { method: "POST" });
       showLogin();
     });
@@ -575,6 +770,7 @@
     });
 
     checkAuth();
+    loadJobs();
   </script>
 </body>
 </html>

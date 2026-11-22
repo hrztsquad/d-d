@@ -8,8 +8,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const express = require('express');
+const axios = require('axios');
 const DoodstreamBot = require('./src/bot');
 const createWebhookServer = require('./src/webhook');
+const { extractUrls, isValidDoodstreamUrl, isValidVideoFile, isRedirectWrapper, followRedirect } = require('./src/utils');
 const logger = require('./src/logger');
 
 // Portal configuration
@@ -247,6 +249,164 @@ portalApp.delete('/api/files/:filename', requirePortalAuth, (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// Web Downloader Queue (runs without Telegram)
+const webJobs = [];
+let isWebProcessing = false;
+
+async function processWebQueue() {
+    if (isWebProcessing) return;
+    isWebProcessing = true;
+
+    try {
+        while (true) {
+            const job = webJobs.find(j => j.status === 'queued');
+            if (!job) break;
+
+            try {
+                job.status = 'extracting';
+                job.message = 'Mengekstrak link video...';
+
+                let targetUrl = job.url;
+                if (isRedirectWrapper(targetUrl)) {
+                    targetUrl = await followRedirect(targetUrl);
+                }
+
+                let videoInfo = null;
+                try {
+                    videoInfo = await bot.extractor.extractVideoUrl(targetUrl);
+                } catch (primaryErr) {
+                    logger.warn(`[Web] Primary extractor gagal: ${primaryErr.message}`);
+                    if (bot.extractorMode !== 'http') {
+                        videoInfo = await bot.httpExtractor.extractVideoUrl(targetUrl);
+                    } else {
+                        throw primaryErr;
+                    }
+                }
+
+                if (!videoInfo || !videoInfo.videoUrl) {
+                    throw new Error('Tidak dapat mengekstrak URL video');
+                }
+
+                const isFakeDirectLink = /streamtape\.(com|to|net)\/.*\.mp4/i.test(videoInfo.videoUrl);
+                if (isFakeDirectLink) {
+                    throw new Error('URL video tidak valid (halaman HTML)');
+                }
+
+                const safeTitle = bot.sanitizeTitle(videoInfo.title, 'video');
+                job.title = videoInfo.title || safeTitle;
+
+                const existingFile = bot.findExistingVideoByTitle(safeTitle);
+                if (existingFile) {
+                    job.status = 'skipped';
+                    job.filename = existingFile;
+                    job.message = `Sudah ada (${existingFile})`;
+                    continue;
+                }
+
+                job.status = 'downloading';
+                job.message = 'Mengunduh video ke VPS...';
+
+                const referer = new URL(targetUrl).origin + '/';
+                const fileName = safeTitle === 'video' ? `${safeTitle}_${Date.now()}.mp4` : `${safeTitle}.mp4`;
+                const filePath = path.join(DOWNLOAD_DIR, fileName);
+
+                const isHlsUrl = /\.m3u8(\?|$)/i.test(videoInfo.videoUrl) || videoInfo.videoUrl.includes('.m3u8');
+                if (isHlsUrl) {
+                    await bot.downloadHlsToMp4(videoInfo.videoUrl, referer, filePath);
+                } else {
+                    const response = await axios({
+                        method: 'get',
+                        url: videoInfo.videoUrl,
+                        responseType: 'stream',
+                        timeout: 30000,
+                        headers: {
+                            'Referer': referer,
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': '*/*'
+                        }
+                    });
+                    const totalLength = parseInt(response.headers['content-length'] || '0', 10);
+                    let downloadedLength = 0;
+
+                    await new Promise((resolve, reject) => {
+                        const writer = fs.createWriteStream(filePath);
+                        response.data.on('data', (chunk) => {
+                            downloadedLength += chunk.length;
+                            if (totalLength > 0) {
+                                const pct = Math.round((downloadedLength / totalLength) * 100);
+                                job.message = `Mengunduh... ${pct}%`;
+                            }
+                        });
+                        response.data.on('error', reject);
+                        writer.on('finish', resolve);
+                        writer.on('error', reject);
+                        response.data.pipe(writer);
+                    });
+                }
+
+                if (!isValidVideoFile(filePath)) {
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                    throw new Error('File video tidak valid atau terlalu kecil');
+                }
+
+                job.status = 'done';
+                job.filename = fileName;
+                job.message = 'Selesai';
+            } catch (err) {
+                job.status = 'error';
+                job.message = err.message || 'Gagal mengunduh';
+                logger.error(`[Web] Download error (${job.url}): ${job.message}`);
+            }
+        }
+    } finally {
+        isWebProcessing = false;
+    }
+}
+
+portalApp.post('/api/download', requirePortalAuth, (req, res) => {
+    const raw = Array.isArray(req.body?.urls) ? req.body.urls.join('\n') : String(req.body?.urls || '');
+    const extracted = extractUrls(raw).filter(u => isValidDoodstreamUrl(u) || isRedirectWrapper(u));
+
+    if (extracted.length === 0) {
+        return res.status(400).json({ error: 'Tidak ada link video yang valid.' });
+    }
+
+    const added = [];
+    for (const url of extracted) {
+        const job = {
+            id: crypto.randomBytes(6).toString('hex'),
+            url,
+            title: url,
+            filename: null,
+            status: 'queued',
+            message: 'Dalam antrean...',
+            createdAt: Date.now()
+        };
+        webJobs.unshift(job);
+        added.push(job);
+    }
+
+    if (webJobs.length > 50) {
+        webJobs.length = 50;
+    }
+
+    setImmediate(processWebQueue);
+    res.json({ ok: true, added: added.length, jobs: added });
+});
+
+portalApp.get('/api/jobs', requirePortalAuth, (req, res) => {
+    res.json({ jobs: webJobs });
+});
+
+portalApp.delete('/api/jobs', requirePortalAuth, (req, res) => {
+    for (let i = webJobs.length - 1; i >= 0; i--) {
+        if (['done', 'skipped', 'error'].includes(webJobs[i].status)) {
+            webJobs.splice(i, 1);
+        }
+    }
+    res.json({ ok: true });
 });
 
 portalApp.listen(PORTAL_PORT, () => {
